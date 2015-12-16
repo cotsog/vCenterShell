@@ -3,6 +3,7 @@ import qualipy.scripts.cloudshell_scripts_helpers as helpers
 from pyVmomi import vim
 from qualipy.api.cloudshell_api import *
 from vCenterShell.commands.BaseCommand import BaseCommand
+from vCenterShell.pycommon.common_collection_utils import first_or_default
 from vCenterShell.pycommon.common_name_utils import generate_unique_name
 
 
@@ -63,22 +64,22 @@ class DeployFromTemplateCommand(BaseCommand):
 
     def get_data_for_deployment(self):
         """ execute the command """
-        resource_att = helpers.get_resource_context_details()
+        resource_context = helpers.get_resource_context_details()
 
         # get vCenter resource name, template name, template folder
-        template_model = self.cs_retriever_service.getVCenterTemplateAttributeData(resource_att)
+        template_model = self.cs_retriever_service.getVCenterTemplateAttributeData(resource_context)
         print "Template: {0}, Folder: {1}, vCenter: {2}".format(template_model.template_name, template_model.vm_folder, template_model.vCenter_resource_name)
 
         # get power state of the cloned VM
-        power_on = self.cs_retriever_service.getPowerStateAttributeData(resource_att)
+        power_on = self.cs_retriever_service.getPowerStateAttributeData(resource_context)
         print "Power On: {0}".format(power_on)
 
         # get cluster and resource pool
-        vm_cluster_model = self.cs_retriever_service.getVMClusterAttributeData(resource_att)
+        vm_cluster_model = self.cs_retriever_service.getVMClusterAttributeData(resource_context)
         print "Cluster: {0}, Resource Pool: {1}".format(vm_cluster_model.cluster_name, vm_cluster_model.resource_pool)
 
         # get datastore
-        datastore_name = self.cs_retriever_service.getVMStorageAttributeData(resource_att)
+        datastore_name = self.cs_retriever_service.getVMStorageAttributeData(resource_context)
         print "Datastore: {0}".format(datastore_name)
 
         connection_details = self.resource_connection_details_retriever.get_connection_details(
@@ -88,7 +89,7 @@ class DeployFromTemplateCommand(BaseCommand):
                                                                         connection_details.password,
                                                                         connection_details.port)
 
-        return DataHolder(resource_att,
+        return DataHolder(resource_context,
                           connection_details,
                           template_model,
                           datastore_name,
@@ -104,17 +105,31 @@ class DeployFromTemplateCommand(BaseCommand):
                     [ResourceAttributesUpdateRequest(deploy_result.vm_name,
                     [AttributeNameValue("vCenter Inventory Path", data_holder.template_model.vCenter_resource_name + "/" + data_holder.template_model.vm_folder),
                         AttributeNameValue("UUID", deploy_result.uuid),
-                        AttributeNameValue("vCenter Template", data_holder.resource_att.attributes["vCenter Template"])])])
+                        AttributeNameValue("vCenter Template", data_holder.resource_context.attributes["vCenter Template"])])])
+
+    def replace_app_resource_with_vm_resource(self, data_holder, deploy_result):
+        app_name = data_holder.resource_context.name
+        self.create_resource_for_deployed_vm(data_holder, deploy_result)
+
+        reservation_id = helpers.get_reservation_context_details().id
+        session = helpers.get_api_session()
+
+        services_position = session.GetReservationServicesPositions(reservation_id)
+        app_poistion = first_or_default(services_position.ResourceDiagramLayouts, lambda x: x.ResourceName == app_name)
+
+        session.RemoveServicesFromReservation(reservation_id, app_name)
+        session.SetReservationResourcePosition(reservation_id, deploy_result.vm_name, app_poistion.X, app_poistion.Y)
 
     def execute(self):
         data_holder = self.get_data_for_deployment()
         deploy_result = self.deploy_from_template(data_holder)
         self.create_resource_for_deployed_vm(data_holder, deploy_result)
+        '#self.replace_app_resource_with_vm_resource(data_holder, deploy_result)'
 
 
 class DataHolder(object):
-    def __init__(self, resource_att, connection_details, template_model, datastore_name, vm_cluster_model, power_on):
-        self.resource_att = resource_att
+    def __init__(self, resource_context, connection_details, template_model, datastore_name, vm_cluster_model, power_on):
+        self.resource_context = resource_context
         self.connection_details = connection_details
         self.template_model = template_model
         self.datastore_name = datastore_name
