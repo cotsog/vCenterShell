@@ -4,7 +4,7 @@ import unittest
 
 from mock import Mock, create_autospec
 from pyVmomi import vim
-
+from vCenterShell.models.VCenterInventoryPathAttribute import VCenterInventoryPathAttribute
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../vCenterShell'))
 from vCenterShell.models.VCenterConnectionDetails import *
@@ -35,7 +35,7 @@ class TestNetworkAdaptersRetriever(unittest.TestCase):
 
         csRetrieverService = Mock()
         csRetrieverService.getVCenterInventoryPathAttributeData = Mock(
-            return_value={'vCenter_resource_name': 'Resource Name'})
+            return_value=VCenterInventoryPathAttribute(vCenter_resource_name='Resource Name', vm_folder=''))
 
         helpers.get_resource_context_details = Mock(return_value={})
 
